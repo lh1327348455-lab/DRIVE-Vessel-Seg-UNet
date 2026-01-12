@@ -24,7 +24,7 @@ An automated evaluation script was developed to search for the optimal threshold
 ## 3. Results & Ablation Study
 
 ### Visual Comparison
-![Final Result](./images/result_01_3.png)
+![Final Result](./images/final_result.png)
 *(Left: Original with CLAHE; Right: Segmentation Result)*
 
 ### Ablation Study (Experimental Log)
