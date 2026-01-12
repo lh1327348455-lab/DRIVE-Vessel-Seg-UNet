@@ -3,3 +3,7 @@ numpy==1.23.5
 Pillow==9.3.0
 tqdm==4.64.1
 wandb==0.13.5
+scikit-image==0.19.3
+torch==2.9.0+cu130
+opencv-python==4.8.1.78
+torchvision==0.24.0+cu130

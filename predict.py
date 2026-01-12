@@ -11,12 +11,13 @@ from torchvision import transforms
 from utils.data_loading import BasicDataset
 from unet import UNet
 from utils.utils import plot_img_and_mask
+from skimage import morphology
 
 def predict_img(net,
                 full_img,
                 device,
                 scale_factor=1,
-                out_threshold=0.5):
+                out_threshold=0.3):
     net.eval()
     img = torch.from_numpy(BasicDataset.preprocess(None, full_img, scale_factor, is_mask=False))
     img = img.unsqueeze(0)
@@ -73,7 +74,27 @@ def mask_to_image(mask: np.ndarray, mask_values):
     for i, v in enumerate(mask_values):
         out[mask == i] = v
 
-    return Image.fromarray(out)
+    if mask.max() <= 1:
+        # 如果是 0/1 矩阵，拉伸到 0/255
+        mask = mask * 255
+    
+    return Image.fromarray(mask.astype(np.uint8))
+
+
+def post_process(mask_pred, min_size=64):
+    """
+    后处理：移除小于 min_size 像素的孤立噪点
+    mask_pred: 0/1 的二值矩阵 (numpy array)
+    """
+    # 1. 转为布尔类型
+    mask_bool = mask_pred > 0
+    
+    # 2. 移除小物体 (Remove small objects)
+    # connectivity=1 表示 4连通，2 表示 8连通
+    cleaned = morphology.remove_small_objects(mask_bool, min_size=min_size, connectivity=1)
+    
+    # 3. 转回 0/255
+    return cleaned.astype(np.uint8) * 255
 
 
 if __name__ == '__main__':
@@ -83,7 +104,7 @@ if __name__ == '__main__':
     in_files = args.input
     out_files = get_output_filenames(args)
 
-    net = UNet(n_channels=3, n_classes=args.classes, bilinear=args.bilinear)
+    net = UNet(n_channels=3, n_classes=1, bilinear=args.bilinear)
 
     device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
     logging.info(f'Loading model {args.model}')
@@ -106,9 +127,12 @@ if __name__ == '__main__':
                            out_threshold=args.mask_threshold,
                            device=device)
 
+        result_cleaned = post_process(mask, min_size=100) # 阈值可以试 50-150
+
+
         if not args.no_save:
             out_filename = out_files[i]
-            result = mask_to_image(mask, mask_values)
+            result = mask_to_image(result_cleaned, mask_values)
             result.save(out_filename)
             logging.info(f'Mask saved to {out_filename}')
 

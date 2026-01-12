@@ -1,9 +1,19 @@
-*.pyc
-data/
+# --- Python 垃圾文件 ---
 __pycache__/
+*.py[cod]
+
+# --- 数据集 (太大了，别人应该自己去下) ---
+data/
+# 但是保留 data 文件夹结构（可选）
+!data/.gitkeep
+
+# --- 训练权重 (太大了，GitHub 限制 100MB) ---
 checkpoints/
-*.pth
-*.jpg
-venv/
-.idea/
+# 如果你非常想上传那个最好的模型 (且小于100MB)，可以把下面这行前面的 # 去掉
+# !checkpoints/checkpoint_epoch50.pth
+
+# --- 日志和临时文件 ---
 wandb/
+.vscode/
+.DS_Store
+*.log

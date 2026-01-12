@@ -40,9 +40,9 @@ def train_model(
 ):
     # 1. Create dataset
     try:
-        dataset = CarvanaDataset(dir_img, dir_mask, img_scale)
+        dataset = CarvanaDataset(dir_img, dir_mask, img_scale, augment=True)
     except (AssertionError, RuntimeError, IndexError):
-        dataset = BasicDataset(dir_img, dir_mask, img_scale)
+        dataset = BasicDataset(dir_img, dir_mask, img_scale, augment=True)
 
     # 2. Split into train / validation partitions
     n_val = int(len(dataset) * val_percent)
@@ -78,7 +78,18 @@ def train_model(
                               lr=learning_rate, weight_decay=weight_decay, momentum=momentum, foreach=True)
     scheduler = optim.lr_scheduler.ReduceLROnPlateau(optimizer, 'max', patience=5)  # goal: maximize Dice score
     grad_scaler = torch.cuda.amp.GradScaler(enabled=amp)
-    criterion = nn.CrossEntropyLoss() if model.n_classes > 1 else nn.BCEWithLogitsLoss()
+    if model.n_classes > 1:
+        criterion = nn.CrossEntropyLoss()
+    else:
+        # 血管大约占 10%，背景占 90%，所以给血管 9~10 倍的权重
+        pos_weight = torch.tensor([9.0]) # 太高可能会导致噪点增多
+        if device.type != 'cpu':
+            pos_weight = pos_weight.to(device)
+        
+        criterion = nn.BCEWithLogitsLoss(pos_weight=pos_weight)        
+
+    # ================= 修改结束 =================
+    
     global_step = 0
 
     # 5. Begin training
@@ -97,11 +108,20 @@ def train_model(
                 images = images.to(device=device, dtype=torch.float32, memory_format=torch.channels_last)
                 true_masks = true_masks.to(device=device, dtype=torch.long)
 
+                # 检查并强制归一化：如果 Mask 里面有 255，就除以 255
+                if true_masks.max() > 1:
+                    true_masks = true_masks / 255.0
+                    
+                # 再次确保只有 0 和 1 (防止插值产生小数)
+                true_masks[true_masks > 0.5] = 1
+                true_masks[true_masks <= 0.5] = 0
+
                 with torch.autocast(device.type if device.type != 'mps' else 'cpu', enabled=amp):
                     masks_pred = model(images)
                     if model.n_classes == 1:
-                        loss = criterion(masks_pred.squeeze(1), true_masks.float())
-                        loss += dice_loss(F.sigmoid(masks_pred.squeeze(1)), true_masks.float(), multiclass=False)
+                        loss_bce = criterion(masks_pred.squeeze(1), true_masks.float())
+                        loss_dice = dice_loss(F.sigmoid(masks_pred.squeeze(1)), true_masks.float(), multiclass=False)
+                        loss = 0.2 * loss_bce + 0.8 * loss_dice
                     else:
                         loss = criterion(masks_pred, true_masks)
                         loss += dice_loss(
@@ -236,3 +256,4 @@ if __name__ == '__main__':
             val_percent=args.val / 100,
             amp=args.amp
         )
+
